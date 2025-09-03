@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>3D Space Shooter</title>
+<style>
+body { margin:0; overflow:hidden; background:black; }
+#hud { position:absolute; top:10px; left:50%; transform:translateX(-50%);
+color:white; font-family:system-ui; font-size:18px; text-align:center; z-index:10;}
+#controls { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:10px; z-index:10; }
+.btn { width:60px; height:60px; border-radius:8px; background:rgba(255,255,255,0.1); color:white;
+font-size:28px; display:flex; align-items:center; justify-content:center; user-select:none; }
+</style>
+</head>
+<body>
+<div id="hud">Score: <span id="score">0</span></div>
+<div id="controls">
+  <div class="btn" id="leftBtn">◀</div>
+  <div class="btn" id="upBtn">▲</div>
+  <div class="btn" id="rightBtn">▶</div>
+  <div class="btn" id="downBtn">▼</div>
+  <div class="btn" id="shootBtn">●</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
+<script>
+let scene, camera, renderer;
+let ship, asteroids=[], bullets=[], particles=[];
+let keys={};
+let score=0;
+const scoreEl=document.getElementById("score");
+
+init();
+animate();
+
+function init(){
+scene=new THREE.Scene();
+camera=new THREE.PerspectiveCamera(70,window.innerWidth/window.innerHeight,0.1,1000);
+camera.position.z=5;
+
+renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth,window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// lights
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+const dir=new THREE.DirectionalLight(0xffffff,0.8);
+dir.position.set(5,10,7);
+scene.add(dir);
+
+// ship: small pyramid
+const geo=new THREE.ConeGeometry(0.1,0.3,8);
+const mat=new THREE.MeshStandardMaterial({color:0x66ccff});
+ship=new THREE.Mesh(geo,mat);
+ship.rotation.x=Math.PI/2;
+ship.position.z=0;
+scene.add(ship);
+
+// touch buttons
+['ArrowLeft','ArrowUp','ArrowRight','ArrowDown',' '].forEach(k=>keys[k]=false);
+document.getElementById("leftBtn").ontouchstart=()=>keys['ArrowLeft']=true;
+document.getElementById("leftBtn").ontouchend=()=>keys['ArrowLeft']=false;
+document.getElementById("rightBtn").ontouchstart=()=>keys['ArrowRight']=true;
+document.getElementById("rightBtn").ontouchend=()=>keys['ArrowRight']=false;
+document.getElementById("upBtn").ontouchstart=()=>keys['ArrowUp']=true;
+document.getElementById("upBtn").ontouchend=()=>keys['ArrowUp']=false;
+document.getElementById("downBtn").ontouchstart=()=>keys['ArrowDown']=true;
+document.getElementById("downBtn").ontouchend=()=>keys['ArrowDown']=false;
+document.getElementById("shootBtn").ontouchstart=()=>keys[' ']=true;
+document.getElementById("shootBtn").ontouchend=()=>keys[' ']=false;
+
+window.addEventListener('keydown',e=>keys[e.key]=true);
+window.addEventListener('keyup',e=>keys[e.key]=false);
+window.addEventListener('resize',onResize);
+}
+
+function spawnAsteroid(){
+const geo=new THREE.IcosahedronGeometry(0.1+Math.random()*0.1,1);
+const mat=new THREE.MeshStandardMaterial({color:0x888866,flatShading:true});
+const a=new THREE.Mesh(geo,mat);
+a.position.set((Math.random()-0.5)*2,(Math.random()-0.5)*2,-10-Math.random()*5);
+scene.add(a);
+asteroids.push(a);
+}
+
+function shootBullet(){
+const bgeo=new THREE.SphereGeometry(0.02,6,6);
+const bmat=new THREE.MeshStandardMaterial({color:0xffff00});
+const b=new THREE.Mesh(bgeo,bmat);
+b.position.set(ship.position.x,ship.position.y,ship.position.z);
+scene.add(b);
+bullets.push(b);
+}
+
+function createExplosion(x,y,z){
+for(let i=0;i<5;i++){
+const geo=new THREE.SphereGeometry(0.01,4,4);
+const mat=new THREE.MeshStandardMaterial({color:0xff6600});
+const p=new THREE.Mesh(geo,mat);
+p.position.set(x,y,z);
+p.velocity={x:(Math.random()-0.5)*0.05,y:(Math.random()-0.5)*0.05,z:(Math.random()-0.5)*0.05};
+scene.add(p);
+particles.push(p);
+}
+}
+
+let lastSpawn=0;
+let lastShot=0;
+function animate(t=0){
+requestAnimationFrame(animate);
+
+// ship movement
+if(keys['ArrowLeft'])ship.position.x-=0.05;
+if(keys['ArrowRight'])ship.position.x+=0.05;
+if(keys['ArrowUp'])ship.position.y+=0.05;
+if(keys['ArrowDown'])ship.position.y-=0.05;
+ship.position.x=Math.max(Math.min(ship.position.x,1),-1);
+ship.position.y=Math.max(Math.min(ship.position.y,1),-1);
+
+// shooting
+if(keys[' '] && t-lastShot>300){shootBullet();lastShot=t;}
+
+// spawn asteroids
+if(t-lastSpawn>1000){spawnAsteroid();lastSpawn=t;}
+
+// move asteroids toward camera
+for(let i=asteroids.length-1;i>=0;i--){
+let a=asteroids[i];
+a.position.z+=0.05;
+if(a.position.distanceTo(ship.position)<0.1){alert('Game Over! Score:'+score);window.location.reload();return;}
+if(a.position.z>1){scene.remove(a);asteroids.splice(i,1);score+=1;scoreEl.textContent=score;}
+}
+
+// move bullets & detect collisions
+for(let i=bullets.length-1;i>=0;i--){
+let b=bullets[i];
+b.position.z-=0.1;
+for(let j=asteroids.length-1;j>=0;j--){
+let a=asteroids[j];
+if(b.position.distanceTo(a.position)<0.1){
+createExplosion(a.position.x,a.position.y,a.position.z);
+scene.remove(a);asteroids.splice(j,1);
+scene.remove(b);bullets.splice(i,1);
+score+=5;scoreEl.textContent=score;break;
+}}
+if(b.position.z<-10){scene.remove(b);bullets.splice(i,1);}
+}
+
+// update particles
+for(let i=particles.length-1;i>=0;i--){
+let p=particles[i];
+p.position.x+=p.velocity.x;
+p.position.y+=p.velocity.y;
+p.position.z+=p.velocity.z;
+p.scale.x*=0.95;p.scale.y*=0.95;p.scale.z*=0.95;
+if(p.scale.x<0.01){scene.remove(p);particles.splice(i,1);}
+}
+
+renderer.render(scene,camera);
+}
+
+function onResize(){
+camera.aspect=window.innerWidth/window.innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(window.innerWidth,window.innerHeight);
+}
+</script>
+</body>
+</html>
